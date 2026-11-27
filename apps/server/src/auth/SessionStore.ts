@@ -510,9 +510,12 @@ const SessionClaims = Schema.Struct({
 });
 type SessionClaims = typeof SessionClaims.Type;
 
+export const WEBSOCKET_REPLAY_MARKER_PREFIX = "websocket-ticket-";
+
 const WebSocketClaims = Schema.Struct({
   v: Schema.Literal(1),
   kind: Schema.Literal("websocket"),
+  nonce: Schema.optionalKey(Schema.String),
   sid: AuthSessionId,
   aud: Schema.optionalKey(AuthWebSocketTicketUse),
   jkt: Schema.optionalKey(Schema.String),
@@ -1056,6 +1059,9 @@ const make = Effect.gen(function* () {
     const claims: WebSocketClaims = {
       v: 1,
       kind: "websocket",
+      nonce: yield* random
+        .uuidV4()
+        .pipe(Effect.mapError((cause) => new WebSocketTokenIssueError({ sessionId, cause }))),
       sid: sessionId,
       ...(input?.audience ? { aud: input.audience } : {}),
       ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),

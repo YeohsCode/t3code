@@ -99,7 +99,6 @@ describe("Antigravity process environment", () => {
         HOME: "/home/developer",
         PATH: "/usr/bin",
         CUSTOM_SETTING: "keep-this",
-        SSH_CONNECTION: "127.0.0.1 0 127.0.0.1 0",
         GEMINI_HOME: profile.geminiHome,
         AGY_ACP_FORCE_FILE_STORAGE: "1",
         AGY_CLI_DISABLE_AUTO_UPDATE: "true",
@@ -150,12 +149,22 @@ describe("Antigravity process environment", () => {
     expect(business.GEMINI_API_KEY).toBeUndefined();
     expect(business.GOOGLE_API_KEY).toBeUndefined();
 
-    // Only the Google account method has the `--login` sign-in that works without the keyring.
     for (const env of [geminiKey, vertexKey, business]) expect(env.SSH_CONNECTION).toBeUndefined();
     expect(
       spawnFor({ authMethod: "oauth-personal", apiKey: "", gcpProject: "", gcpLocation: "" })
         .SSH_CONNECTION,
-    ).toBe("127.0.0.1 0 127.0.0.1 0");
+    ).toBeUndefined();
+  });
+
+  it("preserves a real SSH connection without synthesizing one", () => {
+    const connection = "192.168.1.5 50000 192.168.1.10 22";
+    const spawn = buildAntigravityAcpSpawnInput({
+      installation: { executablePath: "/usr/bin/agy" },
+      profile,
+      cwd: "/project",
+      baseEnv: { SSH_CONNECTION: connection },
+    });
+    expect(spawn.env?.SSH_CONNECTION).toBe(connection);
   });
 
   it("isolates TEMP and TMP to the profile directory on Windows", () => {

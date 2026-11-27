@@ -1019,7 +1019,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
           } as never);
 
         yield* post({ origin: "http://192.168.1.50:5733", "sec-fetch-site": "same-origin" });
-        yield* post({ origin: "http://localhost:13773" });
+        const session = yield* post({ origin: "http://localhost:13773" });
+        // A client learns which session is its own, to tell its answers from another client's.
+        const own = yield* serverAuth.getSessionState({
+          cookies: { [sessions.cookieName]: exchanged.sessionToken },
+          headers: { host: "localhost:13773", origin: "http://localhost:13773" },
+        } as never);
+        expect(own.sessionId).toBe(session.sessionId);
 
         const otherPort = yield* Effect.flip(
           post({ origin: "http://localhost:3000", "sec-fetch-site": "same-site" }),
@@ -1054,6 +1060,38 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
             bearer.sessionId,
           );
         }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" }))),
+    );
+
+    it.effect("consumes RPC tickets once while media tickets remain reusable", () =>
+      Effect.gen(function* () {
+        const auth = yield* EnvironmentAuth.EnvironmentAuth;
+        const bearer = yield* auth.issueSession();
+        const session = yield* auth.authenticateHttpRequest({
+          url: "/api/auth/ws-ticket",
+          cookies: {},
+          headers: { host: "127.0.0.1:3773", authorization: `Bearer ${bearer.token}` },
+        } as never);
+        const rpc = yield* auth.issueWebSocketTicket(session, { use: "rpc" });
+        const upgrade = (ticket: string, use: "rpc" | "media") =>
+          auth.authenticateWebSocketUpgrade(
+            {
+              url: `/ws?wsTicket=${ticket}`,
+              cookies: {},
+              headers: { host: "127.0.0.1:3773" },
+            } as never,
+            use,
+          );
+        yield* upgrade(Redacted.value(rpc.ticket), "rpc");
+        const replay = yield* Effect.flip(upgrade(Redacted.value(rpc.ticket), "rpc"));
+        expect(replay._tag).toBe("ServerAuthInvalidCredentialError");
+        // A reconnect in the same clock tick still needs a distinct ticket.
+        const next = yield* auth.issueWebSocketTicket(session, { use: "rpc" });
+        expect(Redacted.value(next.ticket)).not.toBe(Redacted.value(rpc.ticket));
+        yield* upgrade(Redacted.value(next.ticket), "rpc");
+        const media = yield* auth.issueWebSocketTicket(session, { use: "media" });
+        yield* upgrade(Redacted.value(media.ticket), "media");
+        yield* upgrade(Redacted.value(media.ticket), "media");
+      }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web" }))),
     );
 
     it.effect("binds a DPoP session's RPC socket ticket to its proof key", () =>

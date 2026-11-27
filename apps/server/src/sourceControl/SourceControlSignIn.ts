@@ -66,16 +66,9 @@ const make = Effect.gen(function* () {
           signIn === undefined ? "signed-out" : yield* signIn.access(input.host, input.repository),
       } satisfies SourceControlAppAccess;
     }),
-    starred: Effect.fn("SourceControlSignIn.starred")(function* (input) {
-      const isStarred = drivers.find(({ driver }) => driver.kind === input.provider)?.instance
-        .isRepositoryStarred;
-      return isStarred === undefined ? false : yield* isStarred(input.host, input.repository);
-    }),
-    star: Effect.fn("SourceControlSignIn.star")(function* (input) {
-      const star = drivers.find(({ driver }) => driver.kind === input.provider)?.instance
-        .starRepository;
-      return star === undefined ? false : yield* star(input.host, input.repository);
-    }),
+    // Legacy clients fall back to opening GitHub in their browser, using their own account.
+    starred: Effect.fn("SourceControlSignIn.starred")(() => Effect.succeed(false)),
+    star: Effect.fn("SourceControlSignIn.star")(() => Effect.succeed(false)),
   });
 });
 

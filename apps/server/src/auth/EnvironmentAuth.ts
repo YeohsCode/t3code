@@ -32,6 +32,7 @@ import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
@@ -105,6 +106,12 @@ export interface McpClientSession {
   /** When a peer link's session ends unless it is used again; the linking side keeps this. */
   readonly linkExpiresAt?: DateTime.Utc;
 }
+
+/** What Connections calls a client session: its label, or its browser and system. */
+export const clientSessionLabel = (client: AuthClientMetadata | undefined): string =>
+  client?.label ??
+  ([client?.browser, client?.os].filter((part) => part !== undefined).join(" on ") ||
+    "T3 Code client");
 
 export interface AuthenticatedSession {
   readonly sessionId: AuthSessionId;
@@ -251,6 +258,15 @@ export class ServerAuthWebSocketTokenIssueError extends Schema.TaggedError<Serve
   }
 }
 
+export class ServerAuthWebSocketReplayStateError extends Schema.TaggedError<ServerAuthWebSocketReplayStateError>()(
+  "ServerAuthWebSocketReplayStateError",
+  { ...serverAuthInternalErrorContext },
+) {
+  override get message(): string {
+    return "Failed to record WebSocket ticket replay state.";
+  }
+}
+
 export class ServerAuthDpopReplayStateRecordError extends Schema.TaggedError<ServerAuthDpopReplayStateRecordError>()(
   "ServerAuthDpopReplayStateRecordError",
   {
@@ -379,6 +395,7 @@ export const ServerAuthInternalError = Schema.Union([
   ServerAuthSessionRevocationError,
   ServerAuthOtherSessionsRevocationError,
   ServerAuthWebSocketTokenIssueError,
+  ServerAuthWebSocketReplayStateError,
   ServerAuthDpopReplayStateRecordError,
   ServerAuthDpopReplayKeyCalculationError,
   ServerAuthLinkedCloudAccountVerificationError,
@@ -936,6 +953,7 @@ export const make = Effect.gen(function* () {
             auth: descriptor,
             ...authScopeResponse(session.scopes),
             sessionMethod: session.method,
+            sessionId: session.sessionId,
             ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
           }) satisfies AuthSessionState,
       ),
@@ -1611,6 +1629,29 @@ export const make = Effect.gen(function* () {
               Effect.provideService(ServerSecretStore.ServerSecretStore, secretStore),
               Effect.provideService(Digest.Digest, digest),
             );
+          }
+          if (use === "rpc") {
+            const replayKey = yield* digest
+              .digest(Digest.sha256, new TextEncoder().encode(websocketTicket))
+              .pipe(
+                Effect.map(Base64Url.encode),
+                Effect.mapError((cause) => new ServerAuthWebSocketReplayStateError({ cause })),
+              );
+            yield* secretStore
+              .create(
+                `${SessionStore.WEBSOCKET_REPLAY_MARKER_PREFIX}${replayKey}`,
+                new Uint8Array(),
+              )
+              .pipe(
+                Effect.mapError((cause) =>
+                  ServerSecretStore.isSecretAlreadyExistsError(cause)
+                    ? new ServerAuthInvalidCredentialError({
+                        diagnostic: "WebSocket ticket replayed.",
+                        cause,
+                      })
+                    : new ServerAuthWebSocketReplayStateError({ cause }),
+                ),
+              );
           }
           return {
             sessionId: session.sessionId,

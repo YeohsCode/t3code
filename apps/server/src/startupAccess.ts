@@ -16,6 +16,7 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
+import * as Result from "effect/Result";
 
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -65,10 +66,12 @@ export const isVirtualInterface = (name: string, platform: NodeJS.Platform): boo
   VIRTUAL_INTERFACE.test(name) || (platform === "linux" && LINUX_CONTAINER_INTERFACE.test(name));
 
 /**
- * Loopback or private-range IPv4 (LAN, tailnet, CGNAT), not link-local, in
- * plain or IPv4-mapped IPv6 form.
+ * IPv6 loopback or private-range IPv4 (LAN, tailnet, CGNAT), not link-local,
+ * in plain or IPv4-mapped IPv6 form.
  */
 export const isPrivateNetworkAddress = (address: string): boolean => {
+  const parsed = NetAddress.ipFromString(address);
+  if (Result.isSuccess(parsed) && NetAddress.isLoopback(parsed.success)) return true;
   const ipv4 = address.replace(/^::ffff:/i, "");
   return NodeNet.isIPv4(ipv4) && !ipv4.startsWith("169.254.") && isPrivateNetworkHost(ipv4);
 };
@@ -249,7 +252,7 @@ export const renderTerminalQrCode = (value: string, margin = 2): string => {
   return rows.join("\n");
 };
 
-export const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): string =>
+const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): string =>
   [
     "T3 Code server is ready.",
     `Connection string: ${accessInfo.connectionString}`,
@@ -268,16 +271,20 @@ export const formatHeadlessServeOutput = (accessInfo: HeadlessServeAccessInfo): 
     "",
   ].join("\n");
 
-export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessInfo")(function* () {
+const resolveServeConnectionString = Effect.gen(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
   const httpServer = yield* HttpServer.HttpServer;
-  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
   const platform = yield* HostProcess.Platform;
-  const connectionString = resolveHeadlessConnectionString(
+  return resolveHeadlessConnectionString(
     serverConfig.host,
     resolveListeningPort(httpServer.address, serverConfig.port),
     { privateNetworkOnly: serverConfig.privateNetworkOnly, platform },
   );
+});
+
+const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessInfo")(function* () {
+  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+  const connectionString = yield* resolveServeConnectionString;
   const issued = yield* serverAuth.issueStartupPairingCredential();
 
   return {
@@ -285,4 +292,22 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
     token: issued.credential,
     pairingUrl: buildPairingUrl(connectionString, issued.credential),
   } satisfies HeadlessServeAccessInfo;
+});
+
+/**
+ * What `t3 serve` prints once it is ready. A terminal gets pairing details. The background
+ * service's output is its log file, so it gets the address and the command that pairs a device.
+ */
+export const headlessServeOutput = Effect.fn("headlessServeOutput")(function* (options: {
+  readonly serviceManaged: boolean;
+}) {
+  if (!options.serviceManaged) {
+    return formatHeadlessServeOutput(yield* issueHeadlessServeAccessInfo());
+  }
+  return [
+    "T3 Code server is ready.",
+    `Connection string: ${yield* resolveServeConnectionString}`,
+    "Run `t3 pair` on this machine to connect a device.",
+    "",
+  ].join("\n");
 });

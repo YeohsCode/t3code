@@ -43,6 +43,13 @@ const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const encodeServerSettingsPatch = Schema.encodeSync(ServerSettingsPatch);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+it("requires approval for new Connect devices unless explicitly disabled", () => {
+  expect(decodeServerSettings({}).requireConnectDeviceApproval).toBe(true);
+  expect(
+    decodeServerSettings({ requireConnectDeviceApproval: false }).requireConnectDeviceApproval,
+  ).toBe(false);
+});
+
 it("drops theme defaults from a client's settings patch", () => {
   expect(
     decodeClientServerSettingsPatch({

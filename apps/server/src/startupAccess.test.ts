@@ -3,15 +3,22 @@ import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import type * as NodeOS from "node:os";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { HttpServer } from "effect/http";
+import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as NetAddress from "effect/net/NetAddress";
 import * as TestClock from "effect/testing/TestClock";
 
+import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as ServerConfig from "./config.ts";
 import {
   acceptsPrivateNetworkConnection,
   closeNonPrivateNetworkConnections,
+  headlessServeOutput,
   loopbackUrlHostForAddress,
   resolveHeadlessConnectionString,
   resolveLocalOrigin,
@@ -124,6 +131,8 @@ describe("acceptsPrivateNetworkConnection", () => {
 
   it("serves loopback, LAN, and tailnet clients", () => {
     expect(accepts("127.0.0.1", "127.0.0.1")).toBe(true);
+    expect(accepts("::1", "::1")).toBe(true);
+    expect(accepts("0:0:0:0:0:0:0:1", "::1")).toBe(true);
     expect(accepts("::ffff:192.168.1.20", "::ffff:192.168.1.31")).toBe(true);
     expect(accepts("100.101.102.103", "100.90.1.2")).toBe(true);
   });
@@ -133,6 +142,9 @@ describe("acceptsPrivateNetworkConnection", () => {
     expect(accepts("172.31.4.10", "203.0.113.7")).toBe(false);
     expect(accepts("203.0.113.7", "192.168.1.31")).toBe(false);
     expect(accepts("169.254.10.1", "169.254.10.2")).toBe(false);
+    expect(accepts("::1", "2001:4860:4860::8888")).toBe(false);
+    expect(accepts("::1", "fe80::1")).toBe(false);
+    expect(accepts("::", "::")).toBe(false);
     expect(accepts(undefined, "192.168.1.31")).toBe(false);
   });
 });
@@ -181,6 +193,62 @@ describe("closeNonPrivateNetworkConnections", () => {
       expect(sockets.every((socket) => socket.destroyed)).toBe(true);
       expect(warnings).toHaveLength(2);
       expect(Logger.formatLogFmt.log(warnings[1]!)).toMatch(/closedSinceLastLog\W+999/);
+    }),
+  );
+});
+
+describe("headlessServeOutput", () => {
+  const output = (serviceManaged: boolean) =>
+    Effect.gen(function* () {
+      let issued = 0;
+      const text = yield* headlessServeOutput({ serviceManaged }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+              issueStartupPairingCredential: () =>
+                Effect.sync(() => {
+                  issued += 1;
+                  return {
+                    id: "startup",
+                    credential: "FIXTURECODE1",
+                    expiresAt: DateTime.makeUnsafe("2026-01-01T00:05:00Z"),
+                  };
+                }),
+            }),
+            Layer.mock(HttpServer.HttpServer)({
+              address: NetAddress.inetAddressFromIpStringUnsafe("127.0.0.1", 3773),
+            }),
+            ServerConfig.layerTest(process.cwd(), { prefix: "t3code-startup-access-test-" }).pipe(
+              Layer.provide(NodeServices.layer),
+            ),
+          ),
+        ),
+      );
+      return { text, issued };
+    });
+
+  it.effect("prints pairing details for a server run in a terminal", () =>
+    Effect.gen(function* () {
+      const { text, issued } = yield* output(false);
+      expect(issued).toBe(1);
+      expect(text).toContain("Token: FIXTURECODE1");
+      expect(text).toContain("#token=FIXTURECODE1");
+    }),
+  );
+
+  it.effect("prints the address and the pair command for the background service", () =>
+    Effect.gen(function* () {
+      const { text, issued } = yield* output(true);
+      expect(issued).toBe(0);
+      expect(text).not.toContain("oken");
+      expect(text).toBe(
+        [
+          "T3 Code server is ready.",
+          "Connection string: http://127.0.0.1:3773",
+          "Run `t3 pair` on this machine to connect a device.",
+          "",
+        ].join("\n"),
+      );
     }),
   );
 });

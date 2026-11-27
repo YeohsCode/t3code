@@ -3,6 +3,10 @@
 T3 Connect uses Clerk for cloud identity. The relay manages environment links, bootstrap
 credentials, and managed tunnel allocations. Regular HTTP and WebSocket traffic goes directly from
 clients to the environment's tunnel hostname—the relay Worker is not in the data path.
+TLS terminates at Cloudflare's edge; payloads are not end-to-end encrypted between client and
+environment. The tunnel provider can read traffic, and the Connect service controls routing.
+This fork defaults new device approval to on, while preserving an explicitly saved choice;
+that constrains session minting, not the tunnel provider's visibility.
 
 The one forwarded exception is automation webhooks
 ([`HookForwarder.ts`](../../infra/relay/src/hooks/HookForwarder.ts)), which give senders a stable

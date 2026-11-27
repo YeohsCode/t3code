@@ -54,6 +54,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("replayMarkers", 
       const justExpired = Duration.sum(REPLAY_MARKER_MAX_AGE, Duration.seconds(1));
       const expiredMarkers = [
         "dpop-proof-old",
+        "websocket-ticket-old",
         "cloud-mint-jti-old",
         "cloud-mint-nonce-old",
         "cloud-health-jti-old",
