@@ -28,6 +28,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import type { McpInvocationScope, McpThreadInvocationScope } from "./McpInvocationContext.ts";
@@ -488,7 +489,22 @@ const make = Effect.gen(function* () {
             );
           }
           handoffThreadsInFlight.add(scope.thread.threadId);
-          return restore(performHandoff(scope, input)).pipe(
+          return restore(
+            GitVcsDriver.withRepositoryHooksAllowed(
+              performHandoff(scope, input),
+              Effect.suspend(() => loadThread(scope)).pipe(
+                Effect.map(
+                  ({ thread }) =>
+                    TaskFolders.projectCommandsForAgent(
+                      thread.linkOrigin,
+                      thread,
+                      maxRuntimeMode,
+                    ) === "permitted",
+                ),
+                Effect.orElseSucceed(() => false),
+              ),
+            ),
+          ).pipe(
             Effect.ensuring(
               Effect.sync(() => handoffThreadsInFlight.delete(scope.thread.threadId)),
             ),

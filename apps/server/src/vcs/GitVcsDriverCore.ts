@@ -1140,6 +1140,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const command = { operation: "GitVcsDriver.configuredHooks", cwd, args, env };
     const listed = yield* executeRaw({ ...command, allowNonZeroExit: true }).pipe(
       Effect.provideService(GitVcsDriver.RepositoryHooks, { _tag: "all" }),
+      Effect.provideService(GitVcsDriver.RepositoryHooksAllowed, Effect.succeed(true)),
     );
     // Git exits 1 when no key matches.
     if (listed.exitCode === 1 && listed.stdout === "") return [];
@@ -1193,6 +1194,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const context = gitCommandContext(command);
     const located = yield* executeRaw(command).pipe(
       Effect.provideService(GitVcsDriver.RepositoryHooks, { _tag: "all" }),
+      Effect.provideService(GitVcsDriver.RepositoryHooksAllowed, Effect.succeed(true)),
     );
     const answer = located.stdout.replace(/\r?\n$/, "");
     if (answer === "" || located.stdoutTruncated) {
@@ -1357,7 +1359,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
    * the approved ones fails the command instead of running.
    */
   const hookLimits = Effect.fnUntraced(function* (input: GitVcsDriver.ExecuteGitInput) {
-    const policy = yield* GitVcsDriver.RepositoryHooks;
+    const allowed = yield* yield* GitVcsDriver.RepositoryHooksAllowed;
+    const policy = allowed ? yield* GitVcsDriver.RepositoryHooks : { _tag: "none" as const };
     if (policy._tag === "all") return undefined;
     const none = (configured: ReadonlyArray<ConfiguredHook>) => ({
       hooksPath: "/dev/null",
@@ -1803,6 +1806,31 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       detail: `Could not find an available branch name for '${desiredBranch}'.`,
     });
   });
+
+  const readUnshortenedUpstreamRef = Effect.fn("GitVcsDriver.readUnshortenedUpstreamRef")(
+    function* (cwd: string) {
+      const output = yield* runGitStdout(
+        "GitVcsDriver.readUnshortenedUpstreamRef",
+        cwd,
+        [
+          "for-each-ref",
+          "--format=%(HEAD)%00%(upstream)%00%(upstream:track,nobracket)",
+          "--points-at",
+          "HEAD",
+          "refs/heads/",
+        ],
+        true,
+      );
+      const [, ref, tracking] =
+        output
+          .split("\n")
+          .find((row) => row.startsWith("*\0"))
+          ?.split("\0") ?? [];
+      return ref && tracking !== "gone"
+        ? trimAsciiWhitespace(ref).replace(/^refs\/(?:remotes|heads)\//, "")
+        : null;
+    },
+  );
 
   // `--abbrev-ref` prints `remotes/origin/<name>` when a local `origin/<name>` branch exists.
   const readCurrentUpstreamRef = Effect.fn("readCurrentUpstreamRef")(function* (cwd: string) {
@@ -3076,6 +3104,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const currentUpstreamRef =
       upstreamRemoteName === "" ? null : yield* readCurrentUpstreamRef(cwd);
     let upstreamRef = currentUpstreamRef;
+    if (upstreamRef === null && branch !== null && /[^\x00-\x7f]/u.test(branch)) {
+      upstreamRef = yield* readUnshortenedUpstreamRef(cwd);
+    }
     // Trimming a remote that starts with Unicode whitespace can leave a leading slash.
     if (currentUpstreamRef?.startsWith("/")) {
       upstreamRef = (yield* resolveCurrentUpstream(cwd, currentUpstreamRef))?.upstreamRef ?? null;
@@ -3721,6 +3752,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     if (!upstreamRefExists && !isUnbornHead) upstreamRef = null;
 
+    // Older Git can corrupt the shortened porcelain upstream label for Unicode branch names.
+    if (upstreamRef?.includes("\ufffd")) {
+      upstreamRef =
+        (yield* readUnshortenedUpstreamRef(cwd).pipe(Effect.orElseSucceed(() => null))) ??
+        upstreamRef;
+    }
     const isDefaultBranch =
       refName !== null &&
       (refName === defaultBranch ||
@@ -6858,7 +6895,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         source: submoduleMode.source === "t3.json" ? "t3.json" : "settings",
       });
     }
-    if (submoduleMode.value !== "none") {
+    if (submoduleMode.value !== "none" && (yield* yield* GitVcsDriver.RepositoryHooksAllowed)) {
       if (progress?.onSubmodulesStarted) {
         yield* progress.onSubmodulesStarted();
       }

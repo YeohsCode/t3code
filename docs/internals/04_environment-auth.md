@@ -126,6 +126,15 @@ model.
   there is and is taken as the person's answer.
   What those files go on to run, such as a package script or a file they source, is not part of
   the digest, so an approval is for the named files and not for everything the push executes.
+- **Agent-requested worktree creation shares the project-command ceiling.** Git hooks and automatic
+  submodule initialization stay off for a request below Full access, in Plan mode, under a lower
+  administrator ceiling, or from a fenced peer link. The permission is read again before every Git
+  command and before initializing submodules, including after a slow fetch. Nested work cannot
+  relax an enclosing caller's restriction. Hook inspection itself reads only Git configuration and
+  paths with the guard bypassed to avoid recursively inspecting its own commands. T3's Git calls
+  also disable executable `core.fsmonitor` configuration, including on Git before 2.31; ordinary
+  status reads must not start repository-provided code. These restrictions do not sandbox commands
+  a person authorizes in a terminal or an agent running with Full access.
 - **Peer-link client pairing.** Only a full-access peer link may mint a one-time client pairing on
   the linked environment (since full-access agents can already run `t3 auth pairing create`). The
   linked side enforces this itself, and the operation stays a human-triggered RPC/HTTP route rather

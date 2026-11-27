@@ -1,3 +1,4 @@
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -372,6 +373,71 @@ it.live("puts a clone the project ignores inside the project's worktree", () =>
         "feature",
       );
       assert.equal(yield* run(taskFolder.root, "status", "--porcelain"), "");
+    }),
+  ),
+);
+
+it.live.each([
+  ["permitted", true],
+  ["agent-below-full-access", false],
+  ["request-not-permitted", false],
+] as const)("limits checkout hooks when project commands are %s", ([projectCommands, shouldRun]) =>
+  withState((state) =>
+    Effect.gen(function* () {
+      const { fileSystem, path, tmp, run, repository } = yield* fixture;
+      const project = yield* repository("p");
+      const lib = yield* repository("lib");
+      const aux = yield* repository("aux");
+      yield* run(
+        project,
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        lib,
+        "vendor/lib",
+      );
+      yield* run(project, "commit", "-am", "add submodule");
+      const hooks = path.join(tmp, "hooks");
+      const marker = path.join(tmp, "hook-ran");
+      yield* fileSystem.makeDirectory(hooks);
+      yield* fileSystem.writeFileString(
+        path.join(hooks, "post-checkout"),
+        `#!/bin/sh\nprintf ran > "${marker.replaceAll("\\", "/")}"\n`,
+        { mode: 0o755 },
+      );
+      yield* run(project, "config", "core.hooksPath", hooks);
+      state.workspaceRoot = project;
+      state.trackedFolders = tracked(aux);
+      const folders = yield* TaskFolders.TaskFolders;
+      const plan = yield* folders.plan({ projectId });
+      assert.isNotNull(plan);
+      let current: TaskFolders.ProjectCommands = "permitted";
+      const created = yield* folders
+        .create({
+          plan: plan!,
+          branch: "feature",
+          projectStart: { refName: "main", baseRefName: "main" },
+          startFromOrigin: false,
+          projectCommands: Effect.sync(() => current),
+          onClaimed: () =>
+            Effect.sync(() => {
+              current = projectCommands;
+            }),
+        })
+        .pipe(
+          Effect.provideService(HostProcess.Environment, {
+            ...(yield* HostProcess.Environment),
+            GIT_ALLOW_PROTOCOL: "file",
+          }),
+        );
+      assert.equal(yield* fileSystem.exists(marker), shouldRun);
+      assert.equal(
+        yield* fileSystem.exists(
+          path.join(created.taskFolder.projectPath, "vendor", "lib", "README.md"),
+        ),
+        shouldRun,
+      );
     }),
   ),
 );

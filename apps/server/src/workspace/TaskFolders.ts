@@ -1366,6 +1366,13 @@ const make = Effect.gen(function* () {
         ),
       );
     },
+    (effect, input) =>
+      GitVcsDriver.withRepositoryHooksAllowed(
+        effect,
+        typeof input.projectCommands === "string"
+          ? Effect.succeed(input.projectCommands === "permitted")
+          : input.projectCommands.pipe(Effect.map((allowed) => allowed === "permitted")),
+      ),
   );
 
   /** The project's setting for where new worktrees start. */

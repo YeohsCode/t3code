@@ -421,6 +421,22 @@ describe("VcsProcess.run", () => {
     }),
   );
 
+  it.effect("reads status without executing a repository's fsmonitor command", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-vcs-fsmonitor-" });
+      const git = (args: readonly string[]) => run({ ...baseInput, cwd, args });
+      yield* git(["init"]);
+      yield* git(["config", "core.fsmonitor", "echo ran >> fsmonitor-runs; false"]);
+      yield* git(["status", "--porcelain"]);
+      expect(yield* fs.exists(path.join(cwd, "fsmonitor-runs"))).toBe(false);
+      expect((yield* git(["config", "--local", "--get", "core.fsmonitor"])).stdout.trim()).toBe(
+        "echo ran >> fsmonitor-runs; false",
+      );
+    }).pipe(Effect.scoped, provideLive, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("keeps git from opening a folder laid out as a bare repository", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

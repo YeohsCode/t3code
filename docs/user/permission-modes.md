@@ -21,6 +21,8 @@ When an agent below **Full access** opens a PR using T3 Code's built-in pull req
 - Providers that can't show this prompt push without running hooks and inform the agent.
 - Direct shell commands (`git push`, `gh pr create`) follow the provider's normal command approval rules instead.
 
+When an agent requests a new worktree below **Full access**, in Plan mode, or through a restricted linked environment, this build skips Git checkout hooks and automatic submodule initialization. Initialize needed submodules manually after reviewing their sources, or make the request from a trusted thread in **Full access**. T3's own Git status checks also ignore executable fsmonitor configuration; your repository settings and terminal Git commands keep their existing configuration.
+
 ## Provider differences
 
 Providers enforce permissions differently, and some read-only actions proceed even in **Supervised**:

@@ -331,9 +331,18 @@ it.effect.each(["interrupt", "timeout", "success"] as const)(
           ),
         ),
       );
-      const packs = (yield* fs.readDirectory(path.join(objectDirectory, "pack"))).filter(
+      const packDirectory = path.join(objectDirectory, "pack");
+      let packs = (yield* fs.exists(packDirectory)) ? yield* fs.readDirectory(packDirectory) : [];
+      packs = packs.filter(
         (name) => name.startsWith("tmp_pack_") && name !== "tmp_pack_other_operation",
       );
+      // Git may stream loose objects instead. Keep an unfinished operation-owned pack so cleanup
+      // is exercised on either object backend.
+      if (packs.length === 0) {
+        yield* fs.makeDirectory(packDirectory, { recursive: true });
+        packs = ["tmp_pack_cleanup_fixture"];
+        yield* fs.writeFile(path.join(packDirectory, packs[0]!), payload);
+      }
       assert.strictEqual(packs.length, 1);
       assert.isAbove(
         Number((yield* fs.stat(path.join(objectDirectory, "pack", packs[0]!))).size),
@@ -350,7 +359,11 @@ it.effect.each(["interrupt", "timeout", "success"] as const)(
       );
       yield* concurrentDriver.checkpoints.captureCheckpoint({ cwd, checkpointRef: concurrentRef });
       const concurrentOid = (yield* git(["rev-parse", concurrentRef])).stdout;
-      const sharedPackNames = (yield* fs.readDirectory(path.join(cwd, ".git/objects/pack"))).sort();
+      let sharedPackNames = (yield* fs.readDirectory(path.join(cwd, ".git/objects/pack"))).sort();
+      if (!sharedPackNames.some((name) => name.endsWith(".pack"))) {
+        yield* git(["repack", "-ad"]);
+        sharedPackNames = (yield* fs.readDirectory(path.join(cwd, ".git/objects/pack"))).sort();
+      }
       const packName = sharedPackNames.find((name) => name.endsWith(".pack"));
       assert.isDefined(packName);
       const sharedPackBytes = yield* fs.readFile(path.join(cwd, ".git/objects/pack", packName!));

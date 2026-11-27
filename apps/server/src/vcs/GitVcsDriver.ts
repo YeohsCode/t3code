@@ -401,6 +401,27 @@ export const RepositoryHooks = Context.Reference<RepositoryHooksPolicy>("t3/vcs/
   defaultValue: () => ({ _tag: "all" }),
 });
 
+/** Rechecked before each Git command; a caller's mode may change while a fetch runs. */
+export const RepositoryHooksAllowed = Context.Reference<Effect.Effect<boolean>>(
+  "t3/vcs/RepositoryHooksAllowed",
+  { defaultValue: () => Effect.succeed(true) },
+);
+
+export const withRepositoryHooksAllowed = Effect.fnUntraced(function* <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  allowed: Effect.Effect<boolean>,
+) {
+  const inherited = yield* RepositoryHooksAllowed;
+  return yield* effect.pipe(
+    Effect.provideService(
+      RepositoryHooksAllowed,
+      Effect.gen(function* () {
+        return (yield* inherited) && (yield* allowed);
+      }),
+    ),
+  );
+});
+
 /** Set by background discovery so its Git commands run in their own small lane, not the user's. */
 export const BackgroundGitWork = Context.Reference<boolean>("t3/vcs/BackgroundGitWork", {
   defaultValue: () => false,

@@ -153,6 +153,16 @@ export const serverGitConfigEnv = (env: NodeJS.ProcessEnv, platform: NodeJS.Plat
   for (const [key, value] of SERVER_GIT_CONFIG) {
     Object.assign(added, gitConfigEnv({ ...env, ...added }, key, value, platform));
   }
+  // Unlike GIT_CONFIG_COUNT, Git before 2.31 reads this too; preserve inherited -c settings.
+  const parameterKeys = Object.keys(env).filter((key) =>
+    platform === "win32"
+      ? key.toUpperCase() === "GIT_CONFIG_PARAMETERS"
+      : key === "GIT_CONFIG_PARAMETERS",
+  );
+  const inherited = env[parameterKeys.at(-1) ?? "GIT_CONFIG_PARAMETERS"];
+  for (const key of new Set(["GIT_CONFIG_PARAMETERS", ...parameterKeys])) {
+    added[key] = [inherited, "'core.fsmonitor=false'"].filter(Boolean).join(" ");
+  }
   return added;
 };
 

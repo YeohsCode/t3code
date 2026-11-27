@@ -196,8 +196,7 @@ it.effect("runs background Git in its own lane so user commands never queue behi
       concurrency: "unbounded",
     }).pipe(Effect.forkChild);
 
-    yield* TestClock.adjust("2 seconds");
-    const started = yield* Queue.takeAll(starts);
+    const started = yield* Queue.takeN(starts, 6);
     assert.deepStrictEqual([...started].toSorted(), [
       "background",
       "background",
@@ -11308,7 +11307,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect("turns hooks off for a Git that reads no configuration from the environment", () =>
+    it.effect("protects hooks and fsmonitor before Git supported GIT_CONFIG_COUNT", () =>
       Effect.gen(function* () {
         if ((yield* HostProcess.Platform) === "win32") return;
         const repo = yield* repoToPush();
@@ -11332,6 +11331,16 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           ...env,
           PATH: `${bin}${NodePath.delimiter}${env.PATH}`,
         });
+
+        yield* git(repo.cwd, ["config", "core.fsmonitor", "echo ran >> fsmonitor-runs; false"]);
+        yield* repo.driver
+          .execute({
+            operation: "test.old-git-status",
+            cwd: repo.cwd,
+            args: ["status", "--porcelain"],
+          })
+          .pipe(olderGit);
+        assert.isFalse(NodeFS.existsSync(NodePath.join(repo.cwd, "fsmonitor-runs")));
 
         const pushed = yield* repo.driver
           .pushCurrentBranch(repo.cwd, null)

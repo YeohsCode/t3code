@@ -52,7 +52,7 @@ import {
 
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
-import type * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { parseGitCloneProgressLine } from "../project/gitCloneProgress.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -1401,7 +1401,13 @@ const make = Effect.gen(function* () {
         input.workspaceStrategy.type === "worktree"
           ? setupTracker.holdWorkspace(threadId)
           : Effect.succeed(Effect.void),
-        (release) => prepareInBackground(input, threadId, runId, release),
+        (release) =>
+          GitVcsDriver.withRepositoryHooksAllowed(
+            prepareInBackground(input, threadId, runId, release),
+            projectCommandsFor(input, threadId).pipe(
+              Effect.map((allowed) => allowed === "permitted"),
+            ),
+          ),
         (release) => release,
       );
       if (
