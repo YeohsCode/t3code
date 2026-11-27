@@ -26,7 +26,6 @@ import {
 import { pinOrderKeyBetween } from "@t3tools/shared/pinOrderKey";
 import * as DateTime from "effect/DateTime";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
 import * as Layer from "effect/Layer";
@@ -457,9 +456,7 @@ it.effect("captures send_to_user results for providers that drop MCP outputs", (
   ),
 );
 
-it.effect("records only failed calls of tools that hand off no work", () => {
-  // Recording runs detached from the tool response, so the first event is awaited.
-  const recorded = Deferred.makeUnsafe<{ event: string; properties: object }>();
+it.effect("authorizes tool calls without collecting analytics", () => {
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const organize = (capabilities: McpInvocationContext.McpInvocationScope["capabilities"]) =>
@@ -473,11 +470,6 @@ it.effect("records only failed calls of tools that hand off no work", () => {
     expect((yield* organize(scope.capabilities)).isError).not.toBe(true);
     expect(declaredFailure(yield* organize(new Set<never>()))).toMatchObject({
       code: "capability_denied",
-    });
-    // The successful call ran first, so it would be the first event if it were recorded.
-    expect(yield* Deferred.await(recorded)).toMatchObject({
-      event: "mcp.tool.invoked",
-      properties: { tool: "t3_thread_organize", outcome: "error" },
     });
   }).pipe(
     Effect.provide(
@@ -499,8 +491,7 @@ it.effect("records only failed calls of tools that hand off no work", () => {
           Layer.succeed(
             AnalyticsService.AnalyticsService,
             AnalyticsService.AnalyticsService.of({
-              record: (event, properties) =>
-                Deferred.succeed(recorded, { event, properties: properties ?? {} }),
+              record: () => Effect.die("MCP must not collect analytics"),
               flush: Effect.void,
               recordOwners: () => Effect.void,
             }),
@@ -583,11 +574,10 @@ it.effect("t3_queue list and read load only the queued runs and their messages",
   );
 });
 
-it.effect("handoff analytics read only the caller's active run and its message", () => {
+it.effect("edits queued messages without telemetry history reads", () => {
   const reads: Array<string> = [];
   const attachments = [{ type: "image", id: "shot", name: "shot.png" }];
   const dispatched: Array<unknown> = [];
-  const recorded = Deferred.makeUnsafe<void>();
   return Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     yield* server
@@ -599,7 +589,6 @@ it.effect("handoff analytics read only the caller's active run and its message",
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
         Effect.provideService(McpSchema.McpServerClient, client),
       );
-    yield* Deferred.await(recorded);
     expect(reads).toEqual([]);
     // The edit keeps the queued image, so `/logout` stays an ordinary prompt and is not refused.
     const attached = yield* server
@@ -624,7 +613,7 @@ it.effect("handoff analytics read only the caller's active run and its message",
           Layer.succeed(
             AnalyticsService.AnalyticsService,
             AnalyticsService.AnalyticsService.of({
-              record: () => Deferred.succeed(recorded, undefined).pipe(Effect.as(true)),
+              record: () => Effect.die("MCP must not collect analytics"),
               flush: Effect.void,
               recordOwners: () => Effect.void,
             }),

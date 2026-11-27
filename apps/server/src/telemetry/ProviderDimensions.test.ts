@@ -1,12 +1,6 @@
-import { ProviderInstanceId, ThreadId, type ServerProvider } from "@t3tools/contracts";
+import { ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
-
-import {
-  type AgentThread,
-  agentToolProperties,
-  handoffSettings,
-  toolOutcome,
-} from "./ProviderDimensions.ts";
+import { providerDimensions } from "./ProviderDimensions.ts";
 
 const provider = (
   instanceId: string,
@@ -29,86 +23,23 @@ const providers = [
   provider("opencode", "opencode", [{ slug: "ollama/acme-internal", isCustom: false }]),
 ];
 
-const thread = (
-  instanceId: string,
-  model: string,
-  overrides: Partial<AgentThread> = {},
-): AgentThread => ({
-  modelSelection: { instanceId: ProviderInstanceId.make(instanceId), model },
-  runtimeMode: "full-access",
-  interactionMode: "default",
-  createdBy: "user",
-  creationSource: "web",
-  lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make("t") },
-  ...overrides,
-});
-
-it("reports custom models as custom:<driver> and never instance names", () => {
+it("keeps custom model and instance names out of local feedback dimensions", () => {
   expect(
-    agentToolProperties({
-      tool: "t3_thread_send",
-      providers,
-      caller: thread("claudeAgent", "my-private-finetune"),
-      targets: [thread("opencode", "ollama/acme-internal"), thread("removed-instance", "gpt-5.5")],
-      outcome: { outcome: "ok" },
-    }).map(({ callerProvider, callerModel, targetProvider, targetModel }) => ({
-      callerProvider,
-      callerModel,
-      targetProvider,
-      targetModel,
-    })),
-  ).toEqual([
-    {
-      callerProvider: "claudeAgent",
-      callerModel: "custom:claudeAgent",
-      targetProvider: "opencode",
-      targetModel: "custom:opencode",
-    },
-    {
-      callerProvider: "claudeAgent",
-      callerModel: "custom:claudeAgent",
-      targetProvider: "unknown",
-      targetModel: undefined,
-    },
-  ]);
-});
-
-it("drops input strings outside the schema's literals, since rejected calls are recorded too", () => {
-  expect(handoffSettings("delegate_task", { mode: "/home/me/secret" }, undefined)).toEqual({
-    targetChosen: false,
-    mode: "async",
-  });
-  expect(
-    handoffSettings("t3_thread_launch", { workspaceStrategy: { type: "/home/me/secret" } }, {}),
-  ).toEqual({ targetChosen: false, workspace: "root" });
-});
-
-it("records the binding the saved scheduled task resolved to, and none for failures", () => {
-  expect(handoffSettings("schedule_task", {}, { boundThreadId: null })).toEqual({
-    bindToCurrentThread: false,
-  });
-  expect(
-    handoffSettings(
-      "schedule_task",
-      { bindToCurrentThread: true },
-      { _tag: "OrchestratorMcpFailure", code: "invalid_request", message: "Different project." },
-    ),
-  ).toEqual({});
-});
-
-it("reports only identifier-shaped failure codes and known delivery values", () => {
-  expect(toolOutcome({ isError: true, structuredContent: { code: "thread_not_found" } })).toEqual({
-    outcome: "error",
-    errorCode: "thread_not_found",
-  });
-  expect(
-    toolOutcome({
-      isError: true,
-      structuredContent: { code: "ENOENT: no such file '/Users/julius/secret'" },
+    providerDimensions(providers, {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "my-private-finetune",
     }),
-  ).toEqual({ outcome: "error", errorCode: "unknown" });
-  expect(handoffSettings("t3_thread_send", {}, { delivery: "queued" })).toEqual({
-    delivery: "queued",
-  });
-  expect(handoffSettings("t3_thread_send", {}, { delivery: "/Users/julius" })).toEqual({});
+  ).toEqual({ provider: "claudeAgent", model: "custom:claudeAgent" });
+  expect(
+    providerDimensions(providers, {
+      instanceId: ProviderInstanceId.make("opencode"),
+      model: "ollama/acme-internal",
+    }),
+  ).toEqual({ provider: "opencode", model: "custom:opencode" });
+  expect(
+    providerDimensions(providers, {
+      instanceId: ProviderInstanceId.make("removed-instance"),
+      model: "gpt-5.5",
+    }),
+  ).toEqual({ provider: "unknown" });
 });

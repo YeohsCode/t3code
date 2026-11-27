@@ -31,7 +31,7 @@ const layerRelayTracing = RelayTracing.layer(
     serviceInstanceId: ClientTracer.serviceInstanceId,
     client: typeof window !== "undefined" && window.desktopBridge ? "desktop" : "web",
   },
-  { isEnabled: () => relayTelemetryEnabled() === true },
+  { isEnabled: () => relayTelemetryEnabled() },
 ).pipe(Layer.provide(layerHttpClient));
 
 type RuntimeLayerSource =

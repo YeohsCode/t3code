@@ -7,33 +7,12 @@ import { vi } from "vite-plus/test";
 import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
 import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
 
-import { setConnectionTracesEnabled } from "./diagnosticsSetting";
 import * as Tracing from "./tracing";
 
-vi.mock("expo-constants", () => ({
-  default: {
-    expoConfig: {
-      extra: {},
-    },
-  },
-}));
-
 const layerTracingTo = (fetchFn: typeof fetch) =>
-  Tracing.layerFromConfig(
-    {
-      tracesUrl: "https://api.axiom.test/v1/traces",
-      tracesDataset: "mobile-traces",
-      tracesToken: "public-ingest-token",
-    },
-    {
-      appVariant: "test",
-      serviceInstanceId: "test-instance",
-      serviceVersion: "1.2.3",
-    },
-  ).pipe(Layer.provide(layerRemoteHttpClient(fetchFn)));
+  Tracing.layer.pipe(Layer.provide(layerRemoteHttpClient(fetchFn)));
 
-it.effect.each([false, true])("gates relay sends and preserves typed failures (%s)", (enabled) => {
-  setConnectionTracesEnabled(enabled);
+it.effect("never sends relay traces and preserves typed failures", () => {
   const fetchFn = vi.fn<typeof fetch>(async () => new Response(null, { status: 202 }));
   const layerTracing = layerTracingTo(fetchFn);
   const failure = { durationNanos: 1n };
@@ -57,11 +36,7 @@ it.effect.each([false, true])("gates relay sends and preserves typed failures (%
     Effect.scoped,
     Effect.andThen(
       Effect.sync(() => {
-        expect(fetchFn).toHaveBeenCalledTimes(Number(enabled));
-        if (!enabled) return;
-        expect(new TextDecoder().decode(fetchFn.mock.calls[0]?.[1]?.body as Uint8Array)).toContain(
-          "mobile.test.failed-span",
-        );
+        expect(fetchFn).not.toHaveBeenCalled();
       }),
     ),
   );

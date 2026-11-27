@@ -15,26 +15,8 @@ Threshold monitors in [`infra/relay/src/monitoring.ts`](../../infra/relay/src/mo
 - **Tunnel cleanup stopped / deletions failing:** Check `relay.managed_endpoint_reaper.sweep` spans and Cloudflare API errors. To pause cleanup during an incident, set `RELAY_TUNNEL_CLEANUP_MODE=off` and redeploy the relay (see [Managed tunnel cleanup rollout](./03_release.md#managed-tunnel-cleanup-rollout)).
 - **Account deletions failing:** A Clerk account deletion keeps failing. `select * from relay_account_deletions where completed_at is null order by attempts desc` shows which, and the failed `relay.account_deletion.delete_account` span under each `relay.account_deletion.process_pending` sweep names the stage (usually Cloudflare tunnel teardown). The row stays and retries every 5 minutes until it succeeds.
 
-## Mobile crashes and errors
+## Client diagnostics
 
-The mobile app sends `expo-observe` telemetry to the relay (`/v1/mobile/observe`), which forwards logs, metrics, and spans to Axiom and symbolicates release Hermes JS stacks using source maps from R2 (`relay.symbolication.status` records the outcome).
-
-- **Counting real native crashes:** Fatal JS errors also trigger a native abort; filter out `relay.crash.js_fatal` (and Android OS `SIGKILL`s, which indicate memory pressure/swiping) when counting native crashes:
-
-  ```apl
-  ['t3-code-mobile-logs-prod']
-  | where ['attributes.expo.error.source'] == 'nativeCrash'
-  | where isnull(['attributes.relay.crash.js_fatal'])
-  | summarize count() by ['attributes.exception.type'], ['attributes.exception.message']
-  ```
-
-- **Symbolicating iOS native crashes:** Download the build's dSYM archive from R2 at `ios/dsym/<easBuildId>.zip` and resolve offsets (`T3Code + <offset>`):
-
-  ```sh
-  unzip <easBuildId>.zip
-  atos -arch arm64 -o T3Code.app.dSYM/Contents/Resources/DWARF/T3Code -l 0x100000000 \
-    $(printf '0x%x' $((0x100000000 + <offset>)))
-  ```
-
-- **Source map upload secret:** `MOBILE_SOURCEMAPS_R2` comes from Alchemy output `mobileSourceMapsUploadCredentials` (`cd infra/relay && vp exec alchemy state read T3CodeRelay/prod/output`). Store it as a GitHub Actions secret (for OTA updates) and as an EAS `production`-only secret (never `preview`, which runs PR code).
-- **Mobile alerts ([`infra/relay/src/mobileTelemetry/monitoring.ts`](../../infra/relay/src/mobileTelemetry/monitoring.ts)):** Crash spikes right after a release usually indicate a bad OTA—roll back in EAS. Android OS-kill spikes lag releases and point to memory leaks or main-thread freezes.
+This build removes client relay tracing and the mobile automatic reporting SDK. The relay's legacy
+mobile ingestion and symbolication infrastructure remains for older clients; it receives no reports
+from this build. Relay service monitoring is independent of client-side collection.
