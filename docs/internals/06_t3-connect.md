@@ -1,5 +1,7 @@
 # T3 Connect
 
+T3 Connect is an explicit opt-in in this fork (`T3CODE_CONNECT_ENABLED=true`), independent of stored credentials and public relay/login configuration. Client builds suppress cloud authentication when off; the server gates tunnel recovery, reachability probes, credential minting, held-webhook wakeups and activity publishing. Stored credentials stay dormant rather than being erased when the flag is off. Direct connections have their own session ownership and remain available.
+
 T3 Connect uses Clerk for cloud identity. The relay manages environment links, bootstrap
 credentials, and managed tunnel allocations. Regular HTTP and WebSocket traffic goes directly from
 clients to the environment's tunnel hostname—the relay Worker is not in the data path.

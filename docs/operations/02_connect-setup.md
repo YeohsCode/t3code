@@ -4,9 +4,12 @@ Deployment and client configuration for T3 Connect. See [T3 Connect](../internal
 
 ## Public application configuration
 
-T3 Connect is disabled in a fresh clone. Copy `.env.example` to `.env` for production, or set these public identifiers in `.env` / `.env.local` (process env > `.env.local` > `.env`):
+This fork defaults T3 Connect to off, even when relay URLs, Clerk identifiers, or old link credentials are present. Local operation and direct LAN, SSH, and Tailscale connections remain available. Cloud-account discovery, managed Connect tunnels, cloud push/Live Activities, Connect guest links and held webhooks require explicit opt-in.
+
+To enable Connect, set the following in `.env` / `.env.local` before building each web, desktop and mobile client and the bundled server (process env > `.env.local` > `.env`):
 
 ```dotenv
+T3CODE_CONNECT_ENABLED=true
 T3CODE_CLERK_PUBLISHABLE_KEY=<publishable key>
 T3CODE_CLERK_JWT_TEMPLATE=<JWT template name>
 T3CODE_CLERK_CLI_OAUTH_CLIENT_ID=<public OAuth application client ID>
@@ -14,6 +17,10 @@ T3CODE_RELAY_URL=https://relay.example.com
 ```
 
 `CLERK_SECRET_KEY` belongs only in relay secrets, never in client config. Client and bundled-server builds embed these values at build time; EAS preview/production environments need the publishable key, JWT template, and relay URL.
+
+Set `T3CODE_CONNECT_ENABLED=false` and rebuild clients to disable their cloud login and discovery. The server also accepts this environment variable at startup; `false` overrides an enabled server build. Disabled servers do not resume stored tunnels, probe Connect endpoints, mint Connect credentials, or publish activity. Stored link credentials remain dormant so explicit re-enabling is reversible; local unlinking still removes them. Directly paired environments are independent of the cloud account.
+
+Changing source configuration does not change an already running installation. Restart only the T3 instance you intend to update after deploying the new build.
 
 ## Clerk setup
 

@@ -30,6 +30,8 @@ import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as RelayClientLedger from "./RelayClientLedger.ts";
 
+import { connectEnabledConfig } from "./publicConfig.ts";
+
 export type CloudManagedEndpointRuntimeStatus =
   | {
       readonly status: "disabled";
@@ -234,7 +236,9 @@ export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const httpClient = HttpClient.withScope(yield* HttpClient.HttpClient);
   // Without T3 Connect no connector ever runs, whoever asks for one.
-  const connectAllowed = ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy);
+  const connectAllowed =
+    (yield* connectEnabledConfig) &&
+    ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy);
   const activeRef = yield* Ref.make<ActiveConnector | null>(null);
   const desiredConfigRef = yield* Ref.make<RelayManagedEndpointRuntimeConfig | null>(null);
   const recoveryRequests = yield* Queue.sliding<RelayManagedEndpointRuntimeConfig>(1);

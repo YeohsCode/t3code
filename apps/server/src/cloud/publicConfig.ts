@@ -11,10 +11,23 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 
+declare const __T3CODE_BUILD_CONNECT_ENABLED__: boolean | undefined;
 declare const __T3CODE_BUILD_RELAY_URL__: string | undefined;
 declare const __T3CODE_BUILD_CHANNEL__: "nightly" | "latest" | undefined;
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
 declare const __T3CODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__: string | undefined;
+
+const buildTimeConnectEnabled =
+  typeof __T3CODE_BUILD_CONNECT_ENABLED__ !== "undefined" && __T3CODE_BUILD_CONNECT_ENABLED__;
+
+export const makeConnectEnabledConfig = (fallback = buildTimeConnectEnabled) =>
+  Config.String("T3CODE_CONNECT_ENABLED").pipe(
+    Config.withDefault(String(fallback)),
+    Config.map((value) => value.trim().toLowerCase() === "true"),
+  );
+export const connectEnabledConfig = makeConnectEnabledConfig().pipe(
+  Effect.orElseSucceed(() => false),
+);
 
 const CLOUD_CLI_OAUTH_LOOPBACK_PORT = 34338;
 const CLOUD_CLI_OAUTH_SCOPES = CONNECT_OAUTH_SCOPES;
@@ -170,6 +183,9 @@ export function makeCloudCliOAuthConfig({
 export const cloudCliOAuthConfig = makeCloudCliOAuthConfig();
 
 export const hasCloudPublicConfig = Boolean(
+  (process.env.T3CODE_CONNECT_ENABLED === undefined
+    ? buildTimeConnectEnabled
+    : process.env.T3CODE_CONNECT_ENABLED.trim().toLowerCase() === "true") &&
   (normalizeSecureRelayUrl(process.env.T3CODE_RELAY_URL ?? "") ?? buildTimeRelayUrl) &&
   (process.env.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() || buildTimeClerkPublishableKey) &&
   (process.env.T3CODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() || buildTimeClerkCliOAuthClientId),

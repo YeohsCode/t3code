@@ -5,6 +5,7 @@ import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 
 export interface T3CodePublicConfig {
+  readonly connectEnabled: boolean;
   readonly clerkPublishableKey: string | undefined;
   readonly clerkJwtTemplate: string | undefined;
   readonly clerkCliOAuthClientId: string | undefined;
@@ -30,6 +31,9 @@ export function loadRepoEnv({
     ...rootEnv,
     ...localEnv,
     ...baseEnv,
+    T3CODE_CONNECT_ENABLED: String(config.connectEnabled),
+    VITE_T3CODE_CONNECT_ENABLED: String(config.connectEnabled),
+    EXPO_PUBLIC_T3CODE_CONNECT_ENABLED: String(config.connectEnabled),
     ...(config.clerkPublishableKey
       ? {
           T3CODE_CLERK_PUBLISHABLE_KEY: config.clerkPublishableKey,
@@ -60,7 +64,15 @@ export function loadRepoEnv({
 }
 
 function resolvePublicConfig(...sources: readonly Environment[]): T3CodePublicConfig {
+  const enabled = sources
+    .flatMap((source) => [
+      source.T3CODE_CONNECT_ENABLED,
+      source.VITE_T3CODE_CONNECT_ENABLED,
+      source.EXPO_PUBLIC_T3CODE_CONNECT_ENABLED,
+    ])
+    .find((value) => value !== undefined);
   return {
+    connectEnabled: enabled?.trim().toLowerCase() === "true",
     clerkPublishableKey: firstNonEmpty(
       sources,
       "T3CODE_CLERK_PUBLISHABLE_KEY",

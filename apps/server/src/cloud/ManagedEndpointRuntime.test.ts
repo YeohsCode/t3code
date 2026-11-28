@@ -97,7 +97,11 @@ const buildCloudManagedEndpointRuntime = (
     );
   }).pipe(
     Effect.provideService(HostProcess.Environment, env),
-    Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env }))),
+    Effect.provide(
+      ConfigProvider.layer(
+        ConfigProvider.fromEnv({ env: { T3CODE_CONNECT_ENABLED: "true", ...env } }),
+      ),
+    ),
   );
 
 function makeHandle(input: {
@@ -126,6 +130,24 @@ function makeHandle(input: {
 }
 
 describe("CloudManagedEndpointRuntime", () => {
+  it.effect("does not start a stored tunnel when Connect is explicitly disabled", () =>
+    Effect.gen(function* () {
+      const runtime = yield* buildCloudManagedEndpointRuntime(
+        ChildProcessSpawner.make(() => Effect.die("disabled Connect tried to spawn a connector")),
+        layerRelayClientAvailable,
+        unusedHttpClient,
+        emptySecretStoreLayer,
+        { T3CODE_CONNECT_ENABLED: "false" },
+      );
+      const status = yield* runtime.applyConfig({
+        providerKind: "cloudflare_tunnel",
+        tunnelId: "stored",
+        connectorToken: "token",
+      });
+      expect(status.status).toBe("disabled");
+    }),
+  );
+
   it.effect("serializes updates to persisted cloud link state", () =>
     Effect.gen(function* () {
       const firstEntered = yield* Deferred.make<void>();
@@ -599,7 +621,9 @@ describe("CloudManagedEndpointRuntime", () => {
       expect(fixture.killed).toEqual([800, 801]);
     }).pipe(
       Effect.provideService(HostProcess.Environment, {}),
-      Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+      Effect.provide(
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_CONNECT_ENABLED: "true" } })),
+      ),
     ),
   );
 
@@ -926,7 +950,17 @@ describe("CloudManagedEndpointRuntime", () => {
           ),
         ).toBe(true);
       }
-    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          ConfigProvider.layerAdd(ConfigProvider.fromUnknown({ T3CODE_CONNECT_ENABLED: "true" }), {
+            asPrimary: true,
+          }),
+        ),
+      ),
+    ),
   );
 
   it.effect("discards a pending fallback when its connector is replaced or removed", () =>

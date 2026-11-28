@@ -19,6 +19,7 @@ import { RelayAgentActivityState } from "@t3tools/contracts/relay";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -166,6 +167,7 @@ describe("startup agent activity", () => {
 
 const makeTestRelay = Effect.fnUntraced(function* (
   options: {
+    readonly connectEnabled?: boolean;
     readonly respond?: (attempt: number) => Response;
     readonly failSecretRead?: (name: string) => boolean;
     readonly linked?: boolean;
@@ -334,12 +336,34 @@ const makeTestRelay = Effect.fnUntraced(function* (
       getById: () => Effect.succeedSome(project),
     }),
     Effect.provideService(FetchHttpClient.Fetch, fetch),
-    Effect.provide(NodeCrypto.layer),
+    Effect.provide(
+      Layer.mergeAll(
+        NodeCrypto.layer,
+        ConfigProvider.layerAdd(
+          ConfigProvider.fromUnknown({
+            T3CODE_CONNECT_ENABLED: String(options.connectEnabled ?? true),
+          }),
+          { asPrimary: true },
+        ),
+      ),
+    ),
   );
   return { relay, secrets, secretReads, currentShell, shellReads, publications, catchUp };
 });
 
 describe("AgentAwarenessRelay", () => {
+  it.effect("never publishes legacy activity or starts catch-up while Connect is off", () =>
+    Effect.gen(function* () {
+      const { relay, publications, shellReads } = yield* makeTestRelay({ connectEnabled: false });
+      yield* relay.start();
+      yield* relay.publishThread(THREAD_ID);
+      yield* relay.requestCatchUp();
+      yield* relay.drain;
+      assert.deepEqual(publications, []);
+      assert.deepEqual(shellReads, []);
+    }),
+  );
+
   it.effect("publishes the parent as needing approval while its subagent waits", () =>
     Effect.gen(function* () {
       const shells = yield* Ref.make(

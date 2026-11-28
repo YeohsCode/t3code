@@ -8,6 +8,7 @@ import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -129,8 +130,17 @@ type Served = Effect.Effect<ServedResponse, HttpClientError.HttpClientError>;
 const reachabilityLayer = (
   respond: Served | ((request: HttpClientRequest.HttpClientRequest) => Served),
   restartConnector: (pid: number, stillDead: Effect.Effect<boolean>) => Effect.Effect<boolean>,
+  connectEnabled = true,
 ) =>
   ConnectReachability.layer.pipe(
+    Layer.provide(
+      ConfigProvider.layerAdd(
+        ConfigProvider.fromUnknown({ T3CODE_CONNECT_ENABLED: String(connectEnabled) }),
+        {
+          asPrimary: true,
+        },
+      ),
+    ),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ManagedEndpointRuntime.CloudManagedEndpointRuntime)({
@@ -175,6 +185,23 @@ const mockEdgeConnect = () =>
   });
 
 describe("ConnectReachability stale connector recovery", () => {
+  it.effect("skips endpoint and TCP probes for stored tunnels when Connect is off", () =>
+    Effect.gen(function* () {
+      using connect = vi.spyOn(NodeNet, "connect");
+      const reachability = yield* ConnectReachability.ConnectReachability;
+      expect(yield* reachability.check).toMatchObject({ cause: "not_linked" });
+      expect(connect).not.toHaveBeenCalled();
+    }).pipe(
+      Effect.provide(
+        reachabilityLayer(
+          Effect.die("disabled Connect probed its endpoint"),
+          () => Effect.die("disabled Connect restarted a connector"),
+          false,
+        ),
+      ),
+    ),
+  );
+
   it.effect("restarts cloudflared when Cloudflare has no connector but it reports ready", () =>
     Effect.gen(function* () {
       using _connect = mockEdgeConnect();

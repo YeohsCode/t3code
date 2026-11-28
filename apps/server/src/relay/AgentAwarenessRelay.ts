@@ -55,6 +55,8 @@ import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 
+import { connectEnabledConfig } from "../cloud/publicConfig.ts";
+
 export class AgentAwarenessRelay extends Context.Service<
   AgentAwarenessRelay,
   {
@@ -425,6 +427,13 @@ export function resolveAgentAwarenessRelayActiveThreadIds(input: {
 
 /** @public */
 export const make = Effect.gen(function* () {
+  if (!(yield* connectEnabledConfig))
+    return AgentAwarenessRelay.of({
+      publishThread: Effect.fn("AgentAwarenessRelay.disabledPublish")(() => Effect.void),
+      drain: Effect.void,
+      requestCatchUp: Effect.fn("AgentAwarenessRelay.disabledCatchUp")(() => Effect.void),
+      start: Effect.fn("AgentAwarenessRelay.disabledStart")(() => Effect.void),
+    });
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
   const threads = yield* ThreadManagement.ThreadManagementService;

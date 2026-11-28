@@ -332,6 +332,7 @@ export default defineConfig(({ command }) => {
       ],
     },
     define: {
+      "import.meta.env.VITE_T3CODE_CONNECT_ENABLED": JSON.stringify(repoEnv.T3CODE_CONNECT_ENABLED),
       "import.meta.env.VITE_WS_URL": JSON.stringify(configuredWsUrl ?? ""),
       // Override .env URLs with empty values in single-origin dev so clients use window.location.origin.
       "import.meta.env.VITE_HTTP_URL": JSON.stringify(configuredHttpUrl ?? ""),

@@ -8,7 +8,16 @@ afterEach(() => {
 });
 
 describe("hasCloudPublicConfig", () => {
+  it("keeps legacy cloud configuration disabled without explicit opt-in", () => {
+    vi.stubEnv("VITE_T3CODE_CONNECT_ENABLED", undefined);
+    vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
+    vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "t3-relay");
+    vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
+    expect(hasCloudPublicConfig()).toBe(false);
+  });
+
   it("rejects an insecure relay URL", () => {
+    vi.stubEnv("VITE_T3CODE_CONNECT_ENABLED", "true");
     vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", "pk_test_example");
     vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "t3-relay");
     vi.stubEnv("VITE_T3CODE_RELAY_URL", "http://relay.example.test");
@@ -18,6 +27,7 @@ describe("hasCloudPublicConfig", () => {
 
   describe("browser origins", () => {
     beforeEach(() => {
+      vi.stubEnv("VITE_T3CODE_CONNECT_ENABLED", "true");
       vi.stubEnv("VITE_CLERK_PUBLISHABLE_KEY", `pk_live_${btoa("clerk.example.com$")}`);
       vi.stubEnv("VITE_CLERK_JWT_TEMPLATE", "t3-relay");
       vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");

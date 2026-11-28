@@ -46,7 +46,7 @@ import { connectCommand, statusCommand, upCommand } from "./cli/up.ts";
 const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer);
 
 const connectPublicConfigMissingMessage =
-  "T3 Connect commands are unavailable: this build is missing T3 Connect public configuration.";
+  "T3 Connect is disabled or unconfigured. Set T3CODE_CONNECT_ENABLED=true and configure the relay and Clerk identifiers to enable it.";
 
 class ConnectPublicConfigMissingError extends CliError.UserError {
   override get message() {
@@ -57,7 +57,7 @@ class ConnectPublicConfigMissingError extends CliError.UserError {
 const connectUnavailableCommand = Command.make("connect", {
   command: Argument.String("command").pipe(Argument.variadic),
 }).pipe(
-  Command.withDescription("T3 Connect is unavailable in builds without public configuration."),
+  Command.withDescription("T3 Connect is optional and disabled by default."),
   Command.unlisted,
   Command.withHandler(() =>
     Effect.fail(

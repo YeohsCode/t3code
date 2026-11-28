@@ -465,6 +465,7 @@ describe("DesktopShellEnvironment", () => {
             SSL_CERT_FILE: "/cached/cert.pem",
             SSL_CERT_DIR: "/cached/certs",
             T3CODE_TELEMETRY_ENABLED: "false",
+            T3CODE_CONNECT_ENABLED: "true",
             SSH_AUTH_SOCK: "/stale.sock",
             NODE_OPTIONS: "--bad",
           },
@@ -478,6 +479,7 @@ describe("DesktopShellEnvironment", () => {
           JAVA_HOME: "/launcher/java",
           NODE_EXTRA_CA_CERTS: "/launcher/ca.pem",
           SSL_CERT_FILE: "",
+          T3CODE_CONNECT_ENABLED: "false",
           SSH_AUTH_SOCK: "/current.sock",
         };
         const prepared = yield* runShellEnvironment({
@@ -506,6 +508,7 @@ describe("DesktopShellEnvironment", () => {
         assert.equal(env.SSL_CERT_FILE, "");
         assert.equal(env.SSL_CERT_DIR, "/cached/certs");
         assert.equal(env.T3CODE_TELEMETRY_ENABLED, "false");
+        assert.equal(env.T3CODE_CONNECT_ENABLED, "false");
         assert.equal(env.SSH_AUTH_SOCK, "/current.sock");
         assert.isUndefined(env.NODE_OPTIONS);
         assert.equal(yield* fs.readFileString(cachePath), contents);

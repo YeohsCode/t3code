@@ -22,6 +22,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import { connectEnabledConfig } from "./publicConfig.ts";
 import { CLOUD_ENDPOINT_RUNTIME_CONFIG } from "./config.ts";
 import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 
@@ -253,6 +254,7 @@ export class ConnectReachability extends Context.Service<
 >()("t3/cloud/ConnectReachability") {}
 
 const make = Effect.gen(function* () {
+  const connectEnabled = yield* connectEnabledConfig;
   const runtime = yield* ManagedEndpointRuntime.CloudManagedEndpointRuntime;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const httpClient = yield* HttpClient.HttpClient;
@@ -341,6 +343,14 @@ const make = Effect.gen(function* () {
   );
 
   const gatherFacts = Effect.gen(function* () {
+    if (!connectEnabled)
+      return {
+        managedTunnelConfigured: false,
+        connector: null,
+        endpoint: null,
+        edgeReachable: null,
+        exitNode: null,
+      } satisfies ReachabilityFacts;
     const managedTunnelConfigured = Option.isSome(
       yield* secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG).pipe(Effect.orElseSucceed(Option.none)),
     );

@@ -8,6 +8,8 @@ import * as Schema from "effect/Schema";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 
+import { connectEnabledConfig } from "./publicConfig.ts";
+
 export const CLOUD_MINT_PUBLIC_KEY = "cloud-mint-ed25519-public-key";
 export const CLOUD_ENDPOINT_RUNTIME_CONFIG = "cloud-endpoint-runtime-config";
 export const CLOUD_ENDPOINT_CONFIRMED_ORIGIN = "cloud-endpoint-confirmed-origin";
@@ -52,6 +54,7 @@ export const readAgentActivityPublishingActive: (
   secrets: ServerSecretStore.ServerSecretStore["Service"],
 ) => Effect.Effect<boolean> = Effect.fn("config.readAgentActivityPublishingActive")(
   function* (secrets: ServerSecretStore.ServerSecretStore["Service"]) {
+    if (!(yield* connectEnabledConfig)) return false;
     const readSecretString = (name: string) =>
       secrets
         .get(name)
@@ -86,13 +89,17 @@ const readSecretString = (name: string) =>
     Effect.orElseSucceed(() => null),
   );
 
-export const readRelayConnection = Effect.all([
+const readStoredRelayConnection = Effect.all([
   readSecretString(RELAY_URL_SECRET),
   readSecretString(RELAY_ENVIRONMENT_CREDENTIAL_SECRET),
 ]).pipe(
   Effect.map(([url, environmentCredential]) =>
     url && environmentCredential ? { url, environmentCredential } : null,
   ),
+);
+
+export const readRelayConnection = Effect.flatMap(connectEnabledConfig, (enabled) =>
+  enabled ? readStoredRelayConnection : Effect.succeed(null),
 );
 
 export const readHoldWebhooksWhileOffline = readSecretString(

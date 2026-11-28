@@ -34,9 +34,9 @@ type UntrustedSection<T> = {
 };
 
 type ExpoExtra =
-  | {
+  | ({
       readonly [Section in keyof CloudPublicConfig]?: UntrustedSection<CloudPublicConfig[Section]>;
-    }
+    } & { readonly connect?: { readonly enabled?: unknown } })
   | undefined;
 
 function trimNonEmpty(value: unknown): string | null {
@@ -44,6 +44,12 @@ function trimNonEmpty(value: unknown): string | null {
 }
 
 export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig?.extra) {
+  if (extra?.connect?.enabled !== true)
+    return {
+      clerk: { publishableKey: null, jwtTemplate: null },
+      relay: { url: null },
+      observability: { tracesUrl: null, tracesDataset: null, tracesToken: null },
+    } satisfies CloudPublicConfig;
   return {
     clerk: {
       publishableKey: trimNonEmpty(extra?.clerk?.publishableKey),

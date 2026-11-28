@@ -263,7 +263,12 @@ describe("releaseManagedTunnelOnShutdown", () => {
             Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
           ConfigProvider.layer(
-            ConfigProvider.fromEnv({ env: { T3CODE_RELAY_URL: "https://relay.example.test" } }),
+            ConfigProvider.fromEnv({
+              env: {
+                T3CODE_CONNECT_ENABLED: "true",
+                T3CODE_RELAY_URL: "https://relay.example.test",
+              },
+            }),
           ),
         ]),
         Effect.scoped,
@@ -770,7 +775,12 @@ describe("releaseManagedTunnelOnShutdown", () => {
       const result = yield* relink.pipe(
         Effect.provide(
           ConfigProvider.layer(
-            ConfigProvider.fromEnv({ env: { T3CODE_RELAY_URL: "https://relay.example.test" } }),
+            ConfigProvider.fromEnv({
+              env: {
+                T3CODE_CONNECT_ENABLED: "true",
+                T3CODE_RELAY_URL: "https://relay.example.test",
+              },
+            }),
           ),
         ),
         Effect.flip,

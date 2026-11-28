@@ -2,9 +2,9 @@
 
 Drive T3 Code from your phone, browser (`app.t3.codes`), or another desktop app while your agents run on a host computer or server. The host must stay awake and running while you work.
 
-## T3 Connect (recommended)
+## T3 Connect (optional)
 
-T3 Connect links your host to your other devices without router port-forwarding.
+T3 Connect links your host to your other devices without router port-forwarding. This fork ships with Connect disabled. To opt in, build the clients and server with `T3CODE_CONNECT_ENABLED=true` and the relay/login configuration described in [Connect setup](../operations/02_connect-setup.md). Without Connect, use the LAN, Tailscale or SSH connection methods below; local agent sessions still work.
 
 - **Desktop host**: Open **Settings → Sharing & access**, sign in, and turn on **T3 Connect** (note: closing the desktop app's last window stops its local server—use the [background service](./background-service.md) for unattended access).
 - **CLI / headless host**: Run `t3 up` (or `t3 connect` / `t3 up --connect --lan --yes` for non-interactive scripts) and complete the printed sign-in link on any device. Check status with `t3 status [--json]`.

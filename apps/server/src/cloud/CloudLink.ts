@@ -98,7 +98,7 @@ import * as ManagedEndpointRuntime from "./ManagedEndpointRuntime.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { relayUrlConfig } from "./publicConfig.ts";
+import { connectEnabledConfig, relayUrlConfig } from "./publicConfig.ts";
 import {
   filterRelayResponse,
   relayRequestError,
@@ -529,6 +529,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const managedPolicy = yield* ManagedPolicy.ManagedPolicy;
+  const connectEnabled = yield* connectEnabledConfig;
 
   // Relay-signed text must not name a file directly; a digest is also a fixed, safe length.
   // Untraced: it runs twice per proof inside the health and mint spans.
@@ -1687,16 +1688,23 @@ const make = Effect.gen(function* () {
     Effect.catchIf(ServerSecretStore.isSecretStoreError, internalError("issue-credential")),
   );
 
-  if (!ManagedLimits.allowsConnect(managedPolicy)) {
+  if (!connectEnabled || !ManagedLimits.allowsConnect(managedPolicy)) {
     // Reading state and unlinking stay available so clients can show and leave the old link.
-    yield* unlink().pipe(
-      Effect.tap(() => Effect.logInfo("T3 Connect is off by managed policy; unlinked.")),
-      Effect.catch((cause) =>
-        Effect.logWarning("Failed to unlink T3 Connect turned off by managed policy", { cause }),
-      ),
-    );
+    if (connectEnabled)
+      yield* unlink().pipe(
+        Effect.tap(() => Effect.logInfo("T3 Connect is off by managed policy; unlinked.")),
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to unlink T3 Connect turned off by managed policy", { cause }),
+        ),
+      );
     const refused = Effect.fn("CloudLink.refusedByPolicy")(function* () {
-      return yield* ManagedLimits.refuseConnect(managedPolicy);
+      return yield* connectEnabled
+        ? ManagedLimits.refuseConnect(managedPolicy)
+        : new ManagedLimits.ManagedPolicyRefusedError({
+            organization: "This build",
+            action: "T3 Connect",
+            detail: "Set T3CODE_CONNECT_ENABLED=true to enable it.",
+          });
     });
     const notLinked = Effect.fn("CloudLink.notLinkedByPolicy")(() =>
       Effect.succeed({ status: "not_linked" as const }),
@@ -1706,7 +1714,20 @@ const make = Effect.gen(function* () {
     return CloudLink.of({
       linkProof: refused,
       applyRelayConfig: refused,
-      linkState,
+      linkState: connectEnabled
+        ? linkState
+        : Effect.fn("CloudLink.disabledState")(() =>
+            Effect.succeed({
+              linked: false,
+              linkRevoked: false,
+              cloudUserId: null,
+              relayUrl: null,
+              relayIssuer: null,
+              managedTunnelActive: false,
+              publishAgentActivity: false,
+              holdWebhooksWhileOffline: false,
+            }),
+          ),
       unlink,
       updatePreferences: refused,
       updateLiveActivityPreference: refused,
@@ -1716,7 +1737,9 @@ const make = Effect.gen(function* () {
       registerManagedTunnelRecovery: notLinked,
       recoverManagedTunnel: notStarted,
       startManagedTunnelIfOriginConfirmed: notStarted,
-      releaseManagedTunnelOnShutdown,
+      releaseManagedTunnelOnShutdown: connectEnabled
+        ? releaseManagedTunnelOnShutdown
+        : Effect.fn("CloudLink.disabledShutdown")(() => Effect.succeed(false)),
     });
   }
 

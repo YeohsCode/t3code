@@ -15,6 +15,34 @@ afterEach(() => {
 });
 
 describe("loadRepoEnv", () => {
+  it("defaults Connect off even when a relay and Clerk are configured", () => {
+    const repoRoot = makeTemporaryDirectory();
+    const env = loadRepoEnv({
+      repoRoot,
+      baseEnv: {
+        T3CODE_RELAY_URL: "https://relay.example.test",
+        T3CODE_CLERK_PUBLISHABLE_KEY: "pk_test_key",
+      },
+    });
+    expect(env.T3CODE_CONNECT_ENABLED).toBe("false");
+    expect(env.VITE_T3CODE_CONNECT_ENABLED).toBe("false");
+    expect(env.EXPO_PUBLIC_T3CODE_CONNECT_ENABLED).toBe("false");
+  });
+
+  it("normalizes explicit opt-in for every client and honors process opt-out", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.writeFileSync(NodePath.join(repoRoot, ".env"), "T3CODE_CONNECT_ENABLED=true\n");
+    expect(loadRepoEnv({ repoRoot, baseEnv: {} })).toMatchObject({
+      T3CODE_CONNECT_ENABLED: "true",
+      VITE_T3CODE_CONNECT_ENABLED: "true",
+      EXPO_PUBLIC_T3CODE_CONNECT_ENABLED: "true",
+    });
+    expect(
+      loadRepoEnv({ repoRoot, baseEnv: { T3CODE_CONNECT_ENABLED: "false" } })
+        .VITE_T3CODE_CONNECT_ENABLED,
+    ).toBe("false");
+  });
+
   it("applies process, root local, and root precedence in that order", () => {
     const repoRoot = makeTemporaryDirectory();
     NodeFS.writeFileSync(

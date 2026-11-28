@@ -3,7 +3,12 @@ import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 
-import { hostedAppUrlConfig, makeCloudCliOAuthConfig, makeRelayUrlConfig } from "./publicConfig.ts";
+import {
+  hostedAppUrlConfig,
+  makeCloudCliOAuthConfig,
+  makeRelayUrlConfig,
+  makeConnectEnabledConfig,
+} from "./publicConfig.ts";
 
 const provideEnv = (env: Readonly<Record<string, string>>) =>
   Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env })));
@@ -48,4 +53,23 @@ it.effect("derives direct Clerk OAuth endpoints from statically injected public 
       scopes: ["openid", "profile", "email", "offline_access"],
     });
   }),
+);
+
+it.effect(
+  "Connect requires an explicit opt-in and a runtime opt-out overrides an enabled build",
+  () =>
+    Effect.gen(function* () {
+      assert.isFalse(yield* makeConnectEnabledConfig().pipe(provideEnv({})));
+      assert.isTrue(
+        yield* makeConnectEnabledConfig().pipe(provideEnv({ T3CODE_CONNECT_ENABLED: "true" })),
+      );
+      assert.isFalse(
+        yield* makeConnectEnabledConfig(true).pipe(provideEnv({ T3CODE_CONNECT_ENABLED: "false" })),
+      );
+      assert.isFalse(
+        yield* makeConnectEnabledConfig(true).pipe(
+          provideEnv({ T3CODE_CONNECT_ENABLED: "invalid" }),
+        ),
+      );
+    }),
 );

@@ -5,6 +5,7 @@ import { RELAY_MINT_REQUEST_TYP, signRelayJwt } from "@t3tools/shared/relayJwt";
 import { assert, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -44,6 +45,7 @@ const cloudMintKeys = NodeCrypto.generateKeyPairSync("ed25519", {
 
 const withService = <A, E>(
   options: {
+    readonly connectEnabled?: boolean;
     readonly failHoldWrite?: boolean;
     readonly failActivityWrite?: boolean;
     readonly relayFails?: boolean;
@@ -57,6 +59,7 @@ const withService = <A, E>(
   body: (input: {
     readonly preferences: { readonly update: CloudLink.CloudLink["Service"]["updatePreferences"] };
     readonly mintCredential: CloudLink.CloudLink["Service"]["mintCredential"];
+    readonly linkState: CloudLink.CloudLink["Service"]["linkState"];
     readonly stored: Map<string, Uint8Array>;
     readonly relayCalls: Array<boolean>;
     readonly connectCredentialRequests: Array<
@@ -92,7 +95,7 @@ const withService = <A, E>(
       { preconnect: () => {} },
     );
     const layerDependencies = Layer.mergeAll(
-      ServerSettings.ServerSettingsService.layerTest(),
+      ServerSettings.ServerSettingsService.layerTest({ requireConnectDeviceApproval: false }),
       Layer.mock(ServerSecretStore.ServerSecretStore)({
         get: (name) =>
           (options.failActivityRead && name === PUBLISH_AGENT_ACTIVITY_SECRET) ||
@@ -149,6 +152,7 @@ const withService = <A, E>(
       return yield* body({
         preferences: { update: link.updatePreferences },
         mintCredential: link.mintCredential,
+        linkState: link.linkState,
         stored,
         relayCalls,
         connectCredentialRequests,
@@ -156,6 +160,14 @@ const withService = <A, E>(
     }).pipe(
       Effect.provide(
         CloudLink.layer.pipe(
+          Layer.provide(
+            ConfigProvider.layerAdd(
+              ConfigProvider.fromUnknown({
+                T3CODE_CONNECT_ENABLED: String(options.connectEnabled ?? true),
+              }),
+              { asPrimary: true },
+            ),
+          ),
           // The mocked secret store cannot create a key pair, and no test reads the signature.
           Layer.provide(
             Layer.mock(EnvironmentKeys.EnvironmentSigningKey)({
@@ -168,7 +180,16 @@ const withService = <A, E>(
       ),
       Effect.provideService(FetchHttpClient.Fetch, fetch),
     );
-  });
+  }).pipe(
+    Effect.provide(
+      ConfigProvider.layerAdd(
+        ConfigProvider.fromUnknown({
+          T3CODE_CONNECT_ENABLED: String(options.connectEnabled ?? true),
+        }),
+        { asPrimary: true },
+      ),
+    ),
+  );
 
 it.effect("tells the relay before saving the hold setting locally", () =>
   withService({}, ({ preferences, stored, relayCalls }) =>
@@ -385,6 +406,12 @@ it.effect("unlinks on startup and refuses to link when the policy turns Connect 
     }).pipe(
       Effect.provide(
         CloudLink.layer.pipe(
+          Layer.provide(
+            ConfigProvider.layerAdd(
+              ConfigProvider.fromUnknown({ T3CODE_CONNECT_ENABLED: "true" }),
+              { asPrimary: true },
+            ),
+          ),
           // These tests never sign proofs; the mocked secret store cannot create a key pair.
           Layer.provide(Layer.mock(EnvironmentKeys.EnvironmentSigningKey)({ publicKey: "" })),
           Layer.provide(layerDependencies),
@@ -392,4 +419,19 @@ it.effect("unlinks on startup and refuses to link when the policy turns Connect 
       ),
     );
   }),
+);
+
+it.effect("keeps stored links dormant and refuses cloud actions when Connect is off", () =>
+  withService({ connectEnabled: false }, ({ preferences, linkState, stored, relayCalls }) =>
+    Effect.gen(function* () {
+      assert.isFalse((yield* linkState()).linked);
+      const error = yield* Effect.flip(
+        preferences.update({ publishAgentActivity: true, holdWebhooksWhileOffline: true }),
+      );
+      assert.equal(error._tag, "ManagedPolicyRefusedError");
+      assert.deepEqual(relayCalls, []);
+      assert.isTrue(stored.has(RELAY_URL_SECRET));
+      assert.isTrue(stored.has(RELAY_ENVIRONMENT_CREDENTIAL_SECRET));
+    }),
+  ),
 );
